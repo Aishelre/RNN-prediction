@@ -105,12 +105,22 @@ accuracy = tf.metrics.accuracy(          # return (acc, update_op), and create 2
     labels=tf.argmax(tf_y, axis=1), predictions=tf.argmax(output, axis=1),)[1]
 
 with tf.Session() as sess:
-    init_op = tf.group(tf.global_variables_initializer(), tf.local_variables_initializer()) # the local var is for accuracy_op
-    sess.run(init_op)     # initialize var in graph
+    saver = tf.train.Saver()
+    ckpt = tf.train.get_checkpoint_state('Save data/')
+    print(ckpt)
+    if ckpt and tf.train.checkpoint_exists(ckpt.model_checkpoint_path):
+        print("## SAVED DATA LOAD ##")
+        saver.restore(sess, ckpt.model_checkpoint_path)
+        #saver = tf.train.import_meta_graph("Save data/RNN-model.meta")
+    else:
+        print("** tf.global_variables_initializer **")
+        sess.run(tf.global_variables_initializer())
+    #
+    #saver.restore(sess, "Save data/RNN-model")
+    #saver.restore(sess, tf.train.latest_checkpoint('Save data/'))
+    #graph = tf.get_default_graph()
 
-    print(tf.trainable_variables())
-
-    for step in range(iterations+1):    # training
+    for step in range(iterations):    # training
         batch_input = np.empty((1, seq_length, data_dim), float)
         batch_label = np.empty((1, output_dim), int)
 
@@ -126,25 +136,16 @@ with tf.Session() as sess:
 
         _, loss_ = sess.run([train_op, loss], {tf_x: batch_input, tf_y: batch_label})
 
-        if step % 50 == 0:  # testing
+        if step % 50 == 0:      # testing
             accuracy_ = sess.run(accuracy, {tf_x: test_input, tf_y: test_label})
-            #print(test_input, '->', test_label)
+            print(test_input, '->', test_label)
             print("------------------------")
             print("step             : %d" % step)
             print('* train loss     : %.4f' % loss_)
             print('* test accuracy  : %.2f' % accuracy_)
 
-    #collection_list = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
-    saver = tf.train.Saver()
-    save_path = saver.save(sess, "Save data/RNN-model.ckpt")
-    #saver.export_meta_graph(filename="Save Data/RNN-model.meta",
-    #                        collection_list=collection_list,
-    #                       clear_devices=True,
-    #                        as_text=True)
-
-print("------------------------")
-print(save_path)
-print("* result")
-print('* train loss     : %.4f' % loss_)
-print('* test accuracy  : %.2f' % accuracy_)
-print("------------------------")
+    print("------------------------")
+    print("* result")
+    print('* train loss     : %.4f' % loss_)
+    print('* test accuracy  : %.2f' % accuracy_)
+    print("------------------------")
