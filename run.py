@@ -27,7 +27,7 @@ learning_rate = 0.01
 iterations = 1000
 
 filename = "RNNsample.csv"
-filename = "09.08 000660 - processed.csv"
+#filename = "09.08 000660 - processed.csv"
 
 xy = np.loadtxt(filename, delimiter=',')#, usecols=range(data_dim + 2))  # numpy.ndarray 타입
 data_dim = len(xy[0]) - 2
@@ -66,8 +66,8 @@ input = input[1:]
 #test set
 train_size = int(len(label) * 0.7)
 test_size = len(label) - train_size
-train_input, test_input = input[0:train_size], input[train_size:len(label)]
-train_label, test_label = label[0:train_size], label[train_size:len(label)]
+test_input = input[:]
+test_label = label[:]
 print(test_label)
 print(test_label[20])
 print(test_label.shape)
@@ -100,7 +100,8 @@ accuracy = tf.metrics.accuracy(labels=tf.argmax(tf_y, axis=1), predictions=tf.ar
 # return (acc, update_op), and create 2 local variables
 
 with tf.Session() as sess:
-    init_op = tf.group(tf.global_variables_initializer(),tf.local_variables_initializer())  # the local var is for accuracy_op
+    init_op = tf.group(tf.global_variables_initializer(),
+                       tf.local_variables_initializer())  # the local var is for accuracy_op
     sess.run(init_op)  # initialize var in graph
 
     saver = tf.train.Saver()
@@ -111,12 +112,12 @@ with tf.Session() as sess:
         saver.restore(sess, ckpt.model_checkpoint_path)
     else:
         print("** tf.global_variables_initializer **")
-        #sess.run(tf.global_variables_initializer())
-
-    for step in range(iterations+1):    # training
+        sess.run(tf.global_variables_initializer())
+    """
+    for step in range(iterations):    # training
         batch_input = np.empty((1, seq_length, data_dim), float)
         batch_label = np.empty((1, output_dim), int)
-
+        
         for i in range(BATCH_SIZE):
             idx = random.randint(0, train_size-1)
             input_ = np.array([train_input[idx]])
@@ -129,19 +130,15 @@ with tf.Session() as sess:
 
         _, loss_ = sess.run([train_op, loss], {tf_x: batch_input, tf_y: batch_label})
 
-        if step % 50 == 0:  # testing
-            accuracy_ = sess.run(accuracy, {tf_x: test_input, tf_y: test_label})
-            #print(test_input, '->', test_label)
-            print("------------------------")
-            print("step             : %d" % step)
-            print('* train loss     : %.4f' % loss_)
-            print('* test accuracy  : %.2f' % accuracy_)
+        if step % 50 == 0:      # testing
+        """
+    accuracy_ = sess.run(accuracy, {tf_x: test_input, tf_y: test_label})
+    #print(test_input, '->', test_label)
+    print("------------------------")
+    #print("step             : %d" % step)
+    print('* test accuracy  : %.2f' % accuracy_)
 
-    save_path = saver.save(sess, "Save data/RNN-model.ckpt")
-
-print("------------------------")
-print(save_path)
-print("* result")
-print('* train loss     : %.4f' % loss_)
-print('* test accuracy  : %.2f' % accuracy_)
-print("------------------------")
+    print("------------------------")
+    print("* result")
+    print('* test accuracy  : %.2f' % accuracy_)
+    print("------------------------")
