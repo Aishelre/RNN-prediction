@@ -1,31 +1,22 @@
 """
-** 실시간으로 데이터를 받아옴.
-**
-** client에서 list데이터를 보내고
-**
-** server에서 이 데이터를 seq_length 크기의 배치에 넣는다.
-**
-** 배치[0]의 데이터를 삭제하고 [9]에 데이터를 추가 하여
-** TF로 예측을 한다. 
-**
-** 예측 결과인 int 값을 client로 넘겨준다.
-** 이 값을 가지고 거래 여부를 결정한다.
+Request : trained model, 1초 데이터
+Var : data, asset=0, cnt=0
 
-★ server.py는 계속 실행 되기 때문에
-★ 직접 종료해주어야 한다.
-
+1) processed csv파일을 readlines로 저장한다.
+2) ‎한 줄씩 읽어 TF로 보낸다.
+3) ‎return값이 2일 때 asset-=now, 0일 때 asset+=now. cnt를 증/감 시킨다.
+4) ‎파일을 모두 읽으면 asset+=(cnt * last now)
 """
 
-import Pyro4
 import tensorflow as tf
 import numpy as np
 import json
 
 
-@Pyro4.expose
+
 class TF(object):
     def __init__(self):
-        with open("hyper parameters.txt", 'rt') as fp:
+        with open("Save data/hyper parameters.txt", 'rt') as fp:
             param = json.loads(fp.readline())
         tf.set_random_seed(0)
         np.random.seed(0)
@@ -39,24 +30,17 @@ class TF(object):
         self.result = 0
         self.output_ = 0
 
-        self.flag=True
+        self.flag = True
 
     def wrapper(self, processed_data):
         processed_data = np.array([[processed_data]])
-        print(self.input_data.shape)
-        print(processed_data.shape)
         self.input_data = np.delete(self.input_data, 0, axis=1)
         self.input_data = np.concatenate((self.input_data, processed_data), axis=1)
 
-        #TODO 잘 되는지 확인해야함.
-        if self.input_data[0][0][0] == 0.0:
-            return 1  # 주가 변화 없음 신호
-
         self.tf_init()
-        print("init 함수 종료")
-        self.prediction()
+        output = self.prediction()
 
-        return np.argmax(self.output_)
+        return np.argmax(output, axis=1)[0]
 
     def prediction(self):
         with tf.Session() as sess:
@@ -65,32 +49,22 @@ class TF(object):
             sess.run(init_op)  # initialize var in graph
 
             ckpt = tf.train.get_checkpoint_state('Save data/')
-            print(ckpt)
             self.saver = tf.train.Saver()
-
             if ckpt and tf.train.checkpoint_exists(ckpt.model_checkpoint_path):
-                print("## SAVED DATA LOAD ##")
                 self.saver.restore(sess, ckpt.model_checkpoint_path)
-            else:
-                print("** tf.global_variables_initializer **")
-                # sess.run(tf.global_variables_initializer())
 
             self.output_ = sess.run(self.output, {self.tf_x: self.input_data})
-            # accuracy_ = sess.run(accuracy, {tf_x: test_input, tf_y: test_label})
-            # print(test_input, '->', test_label)
-            print("------------------------")
             print("* output : ", self.output_)
-            # print('* test accuracy  : %.2f' % accuracy_)
-
         tf.reset_default_graph()
-
+        return self.output_
 
     def tf_init(self):
         self.tf_x = tf.placeholder(tf.float32, [None, self.seq_length, self.data_dim], name='tf_x')
         self.tf_y = tf.placeholder(tf.int32, [None, self.output_dim], name='tf_y')
 
         # RNN
-        self.rnn_cell = tf.contrib.rnn.BasicLSTMCell(num_units=self.hidden_dim, reuse=tf.get_variable_scope().reuse)
+        self.rnn_cell = tf.contrib.rnn.BasicLSTMCell(num_units=self.hidden_dim,
+                                                     reuse=tf.get_variable_scope().reuse)
         self.output, (h_c, h_n) = tf.nn.dynamic_rnn(
             self.rnn_cell,  # cell you have chosen
             self.tf_x,  # input
@@ -101,14 +75,36 @@ class TF(object):
         )
 
         self.output = tf.layers.dense(self.output[:, -1, :], self.output_dim, name='dense_output')
-    # End Of Class
+        # End Of Class
 
+
+filename = "09.27 043200 - processed.csv"
+asset = 0
+cnt = 0
 
 tf_ins = TF()
-processed_data = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-tf_ins.wrapper(processed_data)
+tf_ins.wrapper([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0])
 
-daemon = Pyro4.Daemon()
-uri = daemon.register(TF)
-print("Ready. uri = ", uri)
-daemon.requestLoop()
+with open(filename, 'rt') as fp:
+    data = fp.readlines()
+    for line in data:
+        line = line.split(',')
+        line = list(map(float, line))
+        print(type(line[2]), line)
+        output = tf_ins.wrapper(line[2:])
+        print("argmax label : ", output)
+        if output == 0 and cnt != 0:
+            cnt -= 1
+            asset += line[1]
+        elif output == 2:
+            cnt += 1
+            asset -= line[1]
+        print("평가액 : ",asset + cnt*line[1])
+        now = line[1]
+        print("===========================================")
+    #end of prediction
+    if cnt > 0:
+        print(cnt)
+        asset += cnt * now
+
+print("평가액 : ", asset)

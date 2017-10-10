@@ -18,6 +18,7 @@ plt.show()
 
 class Training():
     def __init__(self):
+        self.class_weight=0
         self.csv_file = glob.glob("DATA/Trainable-file/* - processed.csv")
         print(self.csv_file)
 
@@ -39,13 +40,13 @@ class Training():
         self.iterations = param['iterations']
         self.interval = param['interval']
         self.data_dim = param['data_dim']
-        self.output_dim = param['output_dim']
+        self.output_dim = 2
 
 
-        den = [1,2,3,4,5,6,7,8,9,10]
-        seq = [1,2,3,4,5,6,7,8,9,10]
-        inte = [2,3,4,5]
-        hdn = [1,2,3,4,5,10,20,40]
+        den = [1, 2]
+        seq = [2,3]
+        inte = [2,3,4]
+        hdn = [5]
         for d in den:
             for s in seq:
                 for i in inte:
@@ -61,9 +62,12 @@ class Training():
                                  'hidden_dim': self.hidden_dim, 'BATCH_SIZE': self.BATCH_SIZE,
                                  'iterations': self.iterations, 'data_dim': self.data_dim, 'output_dim': self.output_dim}
 
-                        if not os.path.exists("CKPT/" + str(self.cnt) + " Save data"):  # 디렉터리가 없으면 생성한다.
-                            os.makedirs("CKPT/" + str(self.cnt) + " Save data")
-                        with open("CKPT/" + str(self.cnt) + " Save data/Hyper parameters.txt", 'wt') as fp:  # 생성한 디렉터리에 Hparams 정보 저장
+                        if not os.path.exists("CKPT/" + str(self.cnt) + " " + "P" + " Save data"):  # 디렉터리가 없으면 생성한다.
+                            os.makedirs("CKPT/" + str(self.cnt) + " " + "P" +  " Save data")
+                            os.makedirs("CKPT/" + str(self.cnt) + " " + "N" + " Save data")
+                        with open("CKPT/" + str(self.cnt) +" " + "P"+ " Save data/Hyper parameters.txt", 'wt') as fp:  # 생성한 디렉터리에 Hparams 정보 저장
+                            json.dump(param, fp)
+                        with open("CKPT/" + str(self.cnt) +" " + "N"+ " Save data/Hyper parameters.txt", 'wt') as fp:  # 생성한 디렉터리에 Hparams 정보 저장
                             json.dump(param, fp)
 
                         self.train()
@@ -74,20 +78,42 @@ class Training():
     def train(self):
         for file in self.csv_file:
             self.set_dataset(file)
+
             self.tf_init()
-            self.training(file)
+            self.label = self.posi
+            print("POSITIVE, ZERO prediction")
+            self.training(file, "P")
+
+            self.tf_init()
+            self.label = self.nega
+            print("NEGATIVE, ZERO prediction")
+            self.training(file, "N")
 
     def set_dataset(self, filename):
         json_filename = filename[20:] + " " + str(self.interval) + " " + str(self.seq_length) + " " + ".json"
 
-        with open("DATA/seqed data/"+json_filename, 'rt') as fp:
+        with open("DATA/seqed data/" + json_filename, 'rt') as fp:
             data = json.load(fp)
             self.cnt_num_label = data[0]
             self.cnt_label = [0 for _ in range(self.output_dim)]
-            self.input =  np.array(data[1])
+            self.input = np.array(data[1])
             self.label = np.array(data[2])
+            self.train_size = len(self.label)
             fp.close()
-        self.train_size = len(self.label)
+
+        self.posi = np.delete(self.label, np.s_[0], axis=1)  # + binary
+
+        for i in range(len(self.posi)):
+            if (self.posi[i] == np.array([0, 0])).all():
+                self.posi[i] = np.array([1, 0])
+
+
+        ##########################
+        self.nega = np.delete(self.label, np.s_[2], axis=1)  # + binary
+        for i in range(len(self.nega)):
+            if (self.nega[i] == np.array([0, 0])).all():
+                self.nega[i] = np.array([0, 1])
+
 
     def tf_init(self):
         self.tf_x = tf.placeholder(tf.float32, [None, self.seq_length, self.data_dim], name='tf_x')
@@ -112,7 +138,7 @@ class Training():
         tf.metrics.accuracy(labels=tf.argmax(self.tf_y, axis=1), predictions=tf.argmax(self.output, axis=1), name='acc')[1]
         # It returns (acc, update_op), and create 2 local variables
 
-    def training(self, filename):
+    def training(self, filename, sign):  # sign : "P" or "N"
         #gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.333)
         #sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
         with tf.Session() as sess:
@@ -121,7 +147,7 @@ class Training():
                                tf.local_variables_initializer())  # the local var is for accuracy_op
             sess.run(init_op)  # initialize var in graph
 
-            ckpt = tf.train.get_checkpoint_state("CKPT/" + str(self.cnt)+' Save data/')
+            ckpt = tf.train.get_checkpoint_state("CKPT/" + str(self.cnt) + " " + sign + ' Save data/')
             print(ckpt)
             self.saver = tf.train.Saver()
             if ckpt and tf.train.checkpoint_exists(ckpt.model_checkpoint_path):
@@ -142,15 +168,20 @@ class Training():
                     input_ = np.array([self.input[idx]])
                     label_ = np.array(self.label[idx])
 
-                    if label_.tolist() == [0, 0, 1]:
-                        cnt_label[2] += 1
-                    elif label_.tolist() == [0, 1, 0]:
-                        if cnt_label[1] >= int(self.BATCH_SIZE / self.denominator):
-                            continue
-                        cnt_label[1] += 1
-                    elif label_.tolist() == [1, 0, 0]:
-                        cnt_label[0] += 1
-
+                    if sign == "P":
+                        if label_.tolist() == [0, 1]:  # (+)
+                            cnt_label[1] += 1
+                        elif label_.tolist() == [1, 0]:  # 0
+                            if cnt_label[0] >= int(self.BATCH_SIZE / self.denominator):
+                                continue
+                            cnt_label[0] += 1
+                    elif sign == "N":
+                        if label_.tolist() == [1, 0]:  # (-)
+                            cnt_label[0] += 1
+                        elif label_.tolist() == [0, 1]:  # 0
+                            if cnt_label[1] >= int(self.BATCH_SIZE / self.denominator):
+                                continue
+                            cnt_label[1] += 1
                     batch_input = np.vstack((batch_input, input_))
                     batch_label = np.vstack((batch_label, label_))
 
@@ -159,14 +190,14 @@ class Training():
                 batch_input = batch_input[1:]
                 batch_label = batch_label[1:]
 
-                _, loss_ = sess.run([self.train_op, self.loss], {self.tf_x: batch_input, self.tf_y: batch_label})
-
+                _, loss_ = sess.run([self.train_op, self.loss], {self.tf_x: batch_input,
+                                                                 self.tf_y: batch_label})
                 if step % 50 == 0:
                     print("------------------------")
                     print("step             : %d" % step)
                     print('* train loss     : %.4f' % loss_)
 
-            save_path = self.saver.save(sess, "CKPT/" + str(self.cnt)+" Save data/RNN-model.ckpt")
+            save_path = self.saver.save(sess, "CKPT/" + str(self.cnt) + " " + sign+" Save data/RNN-model.ckpt")
 
         print("------------------------")
         print(save_path)

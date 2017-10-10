@@ -1,6 +1,7 @@
 import numpy as np
 import glob
 import json
+import os
 
 class Set_dataset():
     def __init__(self):
@@ -11,7 +12,7 @@ class Set_dataset():
         self.start()
 
     def start(self):
-        csv_list = glob.glob("DATA/Trainable-file/* - processed.csv")
+        csv_list = glob.glob("DATA/for_seqed-file/* - processed.csv")
         print(csv_list)
 
         for filename in csv_list:
@@ -19,6 +20,12 @@ class Set_dataset():
                 for seq in self.seq:
                     self.interval = int
                     self.seq_length = seq
+
+                    print(filename, int, seq)
+                    if os.path.exists("DATA/seqed data/"+ filename[20:] + " " + str(self.interval) + " " + str(self.seq_length) + " " + ".json"):
+                        print("already exist. Continue")
+                        continue
+
                     self.set_dataset(filename)
 
     def set_dataset(self, filename):
