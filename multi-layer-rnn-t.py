@@ -40,41 +40,52 @@ class Training():
         self.interval = param['interval']
         self.data_dim = param['data_dim']
         self.output_dim = 2
+        self.pkeep = param['pkeep']
+        self.NLAYERS = param['NLAYERS']
 
-        lr = [0.001, 0.0001, 0.00001]
+        keep = [1, 0.8]
         den = [1]
-        seq = [1,2,3,4,5]
-        inte = [2,3,4]
-        hdn = [1,3,5,10,20,40]
-        for d in den:
-            for s in seq:
-                for i in inte:
-                    for h in hdn:
-                        for l in lr:
-                            print(self.cnt)
+        seq = [5]
+        inter = [2,3,4]
+        hdn = [20,40,64,128]
+        lr = [0.0001]
+        layer = [1,3,5,10,20]
+        for k in keep:
+            for d in den:
+                for s in seq:
+                    for i in inter:
+                        for h in hdn:
+                            for l in lr:
+                                for lay in layer:
+                                    if self.cnt<0:
+                                        self.cnt+=1
+                                        continue
+                                    print(self.cnt)
 
-                            self.LR = l
-                            self.denominator = d
-                            self.seq_length = s
-                            self.interval = i
-                            self.hidden_dim = h
+                                    self.pkeep = k
+                                    self.LR = l
+                                    self.denominator = d
+                                    self.seq_length = s
+                                    self.interval = i
+                                    self.hidden_dim = h
+                                    self.NLAYERS = lay
 
-                            param = {'denominator': self.denominator, 'LR': self.LR, 'seq_length': self.seq_length, 'interval': self.interval,
-                                     'hidden_dim': self.hidden_dim, 'BATCH_SIZE': self.BATCH_SIZE,
-                                     'iterations': self.iterations, 'data_dim': self.data_dim, 'output_dim': self.output_dim}
+                                    param = {"NLAYERS" : self.NLAYERS, "pkeep" : self.pkeep, 'denominator': self.denominator, 'LR': self.LR, 'seq_length': self.seq_length, 'interval': self.interval,
+                                             'hidden_dim': self.hidden_dim, 'BATCH_SIZE': self.BATCH_SIZE,
+                                             'iterations': self.iterations, 'data_dim': self.data_dim, 'output_dim': self.output_dim}
 
-                            if not os.path.exists("CKPT/" + str(self.cnt) + " " + "P" + " Save data"):  # 디렉터리가 없으면 생성한다.
-                                os.makedirs("CKPT/" + str(self.cnt) + " " + "P" +  " Save data")
-                                os.makedirs("CKPT/" + str(self.cnt) + " " + "N" + " Save data")
-                            with open("CKPT/" + str(self.cnt) +" " + "P"+ " Save data/Hyper parameters.txt", 'wt') as fp:  # 생성한 디렉터리에 Hparams 정보 저장
-                                json.dump(param, fp)
-                            with open("CKPT/" + str(self.cnt) +" " + "N"+ " Save data/Hyper parameters.txt", 'wt') as fp:  # 생성한 디렉터리에 Hparams 정보 저장
-                                json.dump(param, fp)
+                                    if not os.path.exists("CKPT/" + str(self.cnt) + " " + "P" + " Save data"):  # 디렉터리가 없으면 생성한다.
+                                        os.makedirs("CKPT/" + str(self.cnt) + " " + "P" +  " Save data")
+                                        os.makedirs("CKPT/" + str(self.cnt) + " " + "N" + " Save data")
+                                    with open("CKPT/" + str(self.cnt) +" " + "P"+ " Save data/Hyper parameters.txt", 'wt') as fp:  # 생성한 디렉터리에 Hparams 정보 저장
+                                        json.dump(param, fp)
+                                    with open("CKPT/" + str(self.cnt) +" " + "N"+ " Save data/Hyper parameters.txt", 'wt') as fp:  # 생성한 디렉터리에 Hparams 정보 저장
+                                        json.dump(param, fp)
 
-                            self.train()
+                                    self.train()
 
-                            self.cnt += 1
-
+                                    self.cnt += 1
+                                    #END OF LAST FOR STATEMENT
 
     def train(self):
         for file in self.csv_file:
@@ -122,16 +133,14 @@ class Training():
         self.tf_x = tf.placeholder(tf.float32, [None, self.seq_length, self.data_dim], name='tf_x')
         self.tf_y = tf.placeholder(tf.float32, [None, self.output_dim], name='tf_y')
 
-        # RNN
-        self.rnn_cell = tf.contrib.rnn.BasicLSTMCell(num_units=self.hidden_dim)
-        self.outputs, (h_c, h_n) = tf.nn.dynamic_rnn(
-            self.rnn_cell,  # cell you have chosen
-            self.tf_x,  # input
-            initial_state=None,  # the initial hidden state
-            dtype=tf.float32,  # must given if set initial_state = None
-            time_major=False,  # False: (batch, time step, input); True: (time step, batch, input)
-            scope="rnn"
-        )
+        # How to properly apply dropout in RNNs: see README.md
+        self.cells = [tf.contrib.rnn.GRUCell(num_units=self.hidden_dim) for _ in range(self.NLAYERS)]
+        # "naive dropout" implementation
+        self.dropcells = [tf.contrib.rnn.DropoutWrapper(cell, input_keep_prob=self.pkeep) for cell in self.cells]
+        self.multicell = tf.contrib.rnn.MultiRNNCell(self.dropcells, state_is_tuple=False)
+        self.multicell = tf.contrib.rnn.DropoutWrapper(self.multicell, output_keep_prob=self.pkeep)  # dropout for the softmax layer
+
+        self.outputs, _ = tf.nn.dynamic_rnn(self.multicell, self.tf_x, dtype=tf.float32, initial_state=None, scope="rnn")
         self.output = tf.layers.dense(self.outputs[:, -1, :], self.output_dim, name='dense_output')
 
         self.loss = tf.losses.softmax_cross_entropy(onehot_labels=self.tf_y, logits=self.output)  # compute cost
@@ -196,7 +205,7 @@ class Training():
                 _, loss_ = sess.run([self.train_op, self.loss], {self.tf_x: batch_input,
                                                                  self.tf_y: batch_label})
 
-                """
+
                 if self.min_loss > loss_:
                     print("------------------------")
                     print("step             : %d" % step)
@@ -204,12 +213,13 @@ class Training():
                     save_path = self.saver.save(sess, "CKPT/" + str(self.cnt) + " " + sign+" Save data/RNN-model.ckpt")
 
                     self.min_loss = loss_
-                    """
+
                 if step % 100 == 0:
                     print("------------------------")
                     print("step             : %d" % step)
-                    print('* train loss     : %.4f' % loss_)
-                    save_path = self.saver.save(sess, "CKPT/" + str(self.cnt) + " " + sign+" Save data/RNN-model.ckpt")
+                    print('* minimal loss   : %.4f' % self.min_loss)
+                    #print('* train loss     : %.4f' % loss_)
+                    #save_path = self.saver.save(sess, "CKPT/" + str(self.cnt) + " " + sign+" Save data/RNN-model.ckpt")
 
         print("------------------------")
         #print(save_path)

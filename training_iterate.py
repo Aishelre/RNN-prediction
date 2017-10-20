@@ -41,34 +41,38 @@ class Training():
         self.data_dim = param['data_dim']
         self.output_dim = param['output_dim']
 
-
-        den = [1,2,3,4,5,6,7,8,9,10]
-        seq = [1,2,3,4,5,6,7,8,9,10]
+        lr = [0.1, 0.01, 0.001, 0.0001, 0.00001, 0.000001]
+        den = [1]
+        seq = [1,2,3,4,5]
         inte = [2,3,4,5]
-        hdn = [1,2,3,4,5,10,20,40]
+        hdn = [1,3,5,7,10,20,40,80]
         for d in den:
             for s in seq:
                 for i in inte:
                     for h in hdn:
-                        print(self.cnt)
+                        for l in lr:
+                            print(self.cnt)
 
-                        self.denominator = d
-                        self.seq_length = s
-                        self.interval = i
-                        self.hidden_dim = h
+                            self.min_loss = 10
 
-                        param = {'denominator': self.denominator, 'LR': self.LR, 'seq_length': self.seq_length, 'interval': self.interval,
-                                 'hidden_dim': self.hidden_dim, 'BATCH_SIZE': self.BATCH_SIZE,
-                                 'iterations': self.iterations, 'data_dim': self.data_dim, 'output_dim': self.output_dim}
+                            self.LR = l
+                            self.denominator = d
+                            self.seq_length = s
+                            self.interval = i
+                            self.hidden_dim = h
 
-                        if not os.path.exists("CKPT/" + str(self.cnt) + " Save data"):  # 디렉터리가 없으면 생성한다.
-                            os.makedirs("CKPT/" + str(self.cnt) + " Save data")
-                        with open("CKPT/" + str(self.cnt) + " Save data/Hyper parameters.txt", 'wt') as fp:  # 생성한 디렉터리에 Hparams 정보 저장
-                            json.dump(param, fp)
+                            param = {'denominator': self.denominator, 'LR': self.LR, 'seq_length': self.seq_length, 'interval': self.interval,
+                                     'hidden_dim': self.hidden_dim, 'BATCH_SIZE': self.BATCH_SIZE,
+                                     'iterations': self.iterations, 'data_dim': self.data_dim, 'output_dim': self.output_dim}
 
-                        self.train()
+                            if not os.path.exists("CKPT/" + str(self.cnt) + " Save data"):  # 디렉터리가 없으면 생성한다.
+                                os.makedirs("CKPT/" + str(self.cnt) + " Save data")
+                            with open("CKPT/" + str(self.cnt) + " Save data/Hyper parameters.txt", 'wt') as fp:  # 생성한 디렉터리에 Hparams 정보 저장
+                                json.dump(param, fp)
 
-                        self.cnt += 1
+                            self.train()
+
+                            self.cnt += 1
 
 
     def train(self):
@@ -161,17 +165,21 @@ class Training():
 
                 _, loss_ = sess.run([self.train_op, self.loss], {self.tf_x: batch_input, self.tf_y: batch_label})
 
-                if step % 50 == 0:
+                if self.min_loss > loss_:
                     print("------------------------")
                     print("step             : %d" % step)
-                    print('* train loss     : %.4f' % loss_)
+                    print('* minimal loss   : %.4f' % loss_)
+                    save_path = self.saver.save(sess, "CKPT/" + str(self.cnt) + " Save data/RNN-model.ckpt")
+                    self.min_loss = loss_
 
-            save_path = self.saver.save(sess, "CKPT/" + str(self.cnt)+" Save data/RNN-model.ckpt")
+                if step % 100 == 0:
+                    print("step             : %d" % step)
+
 
         print("------------------------")
-        print(save_path)
+        #print(save_path)
         print("* result         : ", filename)
-        print('* train loss     : %.4f' % loss_)
+        print('* train loss     : %.4f' % self.min_loss)
         print("------------------------")
         # -- End of Training --
         tf.reset_default_graph()
