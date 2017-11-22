@@ -21,10 +21,14 @@ class TF(object):
         tf.set_random_seed(0)
         np.random.seed(0)
         # Hyper Parameters=
+        self.interval = param['interval']
         self.seq_length = param['seq_length']
         self.data_dim = param['data_dim']
         self.hidden_dim = param['hidden_dim']
-        self.output_dim = param['output_dim']
+        self.output_dim = 2
+
+        self.pkeep = param["pkeep"]
+        self.NLAYERS = param['NLAYERS']
 
         self.input_data = np.zeros((1, self.seq_length, self.data_dim), float)
         self.result = 0
@@ -60,22 +64,23 @@ class TF(object):
 
     def tf_init(self):
         self.tf_x = tf.placeholder(tf.float32, [None, self.seq_length, self.data_dim], name='tf_x')
-        self.tf_y = tf.placeholder(tf.int32, [None, self.output_dim], name='tf_y')
+        self.tf_y = tf.placeholder(tf.float32, [None, self.output_dim], name='tf_y')
 
-        # RNN
-        self.rnn_cell = tf.contrib.rnn.BasicLSTMCell(num_units=self.hidden_dim,
-                                                     reuse=tf.get_variable_scope().reuse)
-        self.output, (h_c, h_n) = tf.nn.dynamic_rnn(
-            self.rnn_cell,  # cell you have chosen
-            self.tf_x,  # input
-            initial_state=None,  # the initial hidden state
-            dtype=tf.float32,  # must given if set initial_state = None
-            time_major=False,  # False: (batch, time step, input); True: (time step, batch, input)
-            scope="rnn"
-        )
+        # How to properly apply dropout in RNNs: see README.md
+        self.cells = [tf.contrib.rnn.GRUCell(num_units=self.hidden_dim) for _ in range(self.NLAYERS)]
+        # "naive dropout" implementation
+        self.dropcells = [tf.contrib.rnn.DropoutWrapper(cell, input_keep_prob=self.pkeep) for cell in self.cells]
+        self.multicell = tf.contrib.rnn.MultiRNNCell(self.dropcells, state_is_tuple=False)
+        self.multicell = tf.contrib.rnn.DropoutWrapper(self.multicell, output_keep_prob=self.pkeep)  # dropout for the softmax layer
 
-        self.output = tf.layers.dense(self.output[:, -1, :], self.output_dim, name='dense_output')
-        # End Of Class
+        self.outputs, _ = tf.nn.dynamic_rnn(self.multicell, self.tf_x, dtype=tf.float32, initial_state=None, scope="rnn")
+        self.output = tf.layers.dense(self.outputs[:, -1, :], self.output_dim, name='dense_output')
+
+        #self.loss = tf.losses.softmax_cross_entropy(onehot_labels=self.tf_y, logits=self.output)  # compute cost
+        #self.train_op = tf.train.AdamOptimizer(self.LR).minimize(self.loss)
+
+        self.accuracy = tf.metrics.accuracy(labels=tf.argmax(self.tf_y, axis=1), predictions=tf.argmax(self.output, axis=1), name='acc')[1]
+        # It returns (acc, update_op), and create 2 local variables
 
 
 filename = "09.27 043200 - processed.csv"
@@ -88,7 +93,7 @@ tf_ins.wrapper([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0])
 with open(filename, 'rt') as fp:
     data = fp.readlines()
     for line in data:
-        line = line.split(',')
+        line = line.strip().split(',')
         line = list(map(float, line))
         print(type(line[2]), line)
         output = tf_ins.wrapper(line[2:])
@@ -96,9 +101,10 @@ with open(filename, 'rt') as fp:
         if output == 0 and cnt != 0:
             cnt -= 1
             asset += line[1]
-        elif output == 2:
+        if output == 1:
             cnt += 1
             asset -= line[1]
+
         print("평가액 : ",asset + cnt*line[1])
         now = line[1]
         print("===========================================")

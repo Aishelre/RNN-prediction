@@ -6,8 +6,10 @@ import os
 class Set_dataset():
     def __init__(self):
         self.output_dim = 3
-        self.seq = [1,2,3,4,5,6,7,8,9,10]
-        self.int = [2,3,4,5]
+        #self.int = [3,4,5,10,30,60,120]
+        #self.seq = [5,6,7,8,9,10]
+        self.int = [3,4,10]
+        self.seq=[5]
 
         self.start()
 

@@ -43,23 +43,20 @@ class Training():
         self.pkeep = param['pkeep']
         self.NLAYERS = param['NLAYERS']
 
-        keep = [1, 0.8]
-        den = [1]
-        seq = [5]
-        inter = [2,3,4]
-        hdn = [20,40,64,128]
+        keep = [1]
         lr = [0.0001]
-        layer = [1,3,5,10,20]
+        den = [1]
+        seq = [5,6,7,8,9,10]  # 3 ~
+        inter = [3,4,5,10,30]  # 3 ~
+        hdn = [20,40,64,128]
+        layer = [1,3,5]
         for k in keep:
-            for d in den:
-                for s in seq:
-                    for i in inter:
-                        for h in hdn:
-                            for l in lr:
+            for l in lr:
+                for d in den:
+                    for s in seq:
+                        for i in inter:
+                            for h in hdn:
                                 for lay in layer:
-                                    if self.cnt<0:
-                                        self.cnt+=1
-                                        continue
                                     print(self.cnt)
 
                                     self.pkeep = k
@@ -93,13 +90,11 @@ class Training():
 
             self.tf_init()
             self.label = self.posi
-            self.min_loss = 10
             print("POSITIVE prediction")
             self.training(file, "P")
 
             self.tf_init()
             self.label = self.nega
-            self.min_loss = 10
             print("NEGATIVE prediction")
             self.training(file, "N")
 
@@ -162,6 +157,11 @@ class Training():
             ckpt = tf.train.get_checkpoint_state("CKPT/" + str(self.cnt) + " " + sign + ' Save data/')
             print(ckpt)
             self.saver = tf.train.Saver()
+
+            # Tensorboard
+            merged = tf.summary.merge_all()
+            writer = tf.summary.FileWriter("./tensorflowlog", sess.graph)
+
             if ckpt and tf.train.checkpoint_exists(ckpt.model_checkpoint_path):
                 print("## SAVED DATA LOAD ##")
                 self.saver.restore(sess, ckpt.model_checkpoint_path)
@@ -169,7 +169,7 @@ class Training():
                 print("** tf.global_variables_initializer **")
                 # sess.run(tf.global_variables_initializer())
 
-            for step in range(self.iterations + 1):  # training
+            for step in range(1,self.iterations + 1):  # training
                 batch_input = np.empty((1, self.seq_length, self.data_dim), float)
                 batch_label = np.empty((1, self.output_dim), int)
 
@@ -205,26 +205,26 @@ class Training():
                 _, loss_ = sess.run([self.train_op, self.loss], {self.tf_x: batch_input,
                                                                  self.tf_y: batch_label})
 
-
-                if self.min_loss > loss_:
+                """
+                if self.min_loss[sign] > loss_:
                     print("------------------------")
                     print("step             : %d" % step)
                     print('* minimal loss   : %.4f' % loss_)
                     save_path = self.saver.save(sess, "CKPT/" + str(self.cnt) + " " + sign+" Save data/RNN-model.ckpt")
 
-                    self.min_loss = loss_
-
-                if step % 100 == 0:
+                    self.min_loss[sign] = loss_
+"""
+                if step % 200 == 0:
                     print("------------------------")
                     print("step             : %d" % step)
-                    print('* minimal loss   : %.4f' % self.min_loss)
+                    print('*loss            : %.4f' % loss_)
                     #print('* train loss     : %.4f' % loss_)
-                    #save_path = self.saver.save(sess, "CKPT/" + str(self.cnt) + " " + sign+" Save data/RNN-model.ckpt")
+            save_path = self.saver.save(sess, "CKPT/" + str(self.cnt) + " " + sign+" Save data/RNN-model.ckpt")
 
         print("------------------------")
-        #print(save_path)
+        print(save_path)
         print("* result         : ", filename)
-        print('* train loss     : %.4f' % self.min_loss)
+        print('* train loss     : %.4f' % loss_)
         print("------------------------")
         # -- End of Training --
         tf.reset_default_graph()

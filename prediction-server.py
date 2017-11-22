@@ -25,7 +25,7 @@ import json
 @Pyro4.expose
 class TF(object):
     def __init__(self):
-        with open("hyper parameters.txt", 'rt') as fp:
+        with open("Save data/hyper parameters.txt", 'rt') as fp:
             param = json.loads(fp.readline())
         tf.set_random_seed(0)
         np.random.seed(0)
@@ -33,30 +33,26 @@ class TF(object):
         self.seq_length = param['seq_length']
         self.data_dim = param['data_dim']
         self.hidden_dim = param['hidden_dim']
-        self.output_dim = param['output_dim']
+        self.output_dim = 2
+        self.pkeep = param['pkeep']
+        self.NLAYERS = param['NLAYERS']
 
         self.input_data = np.zeros((1, self.seq_length, self.data_dim), float)
         self.result = 0
         self.output_ = 0
 
-        self.flag=True
 
     def wrapper(self, processed_data):
         processed_data = np.array([[processed_data]])
-        print(self.input_data.shape)
-        print(processed_data.shape)
         self.input_data = np.delete(self.input_data, 0, axis=1)
         self.input_data = np.concatenate((self.input_data, processed_data), axis=1)
-
-        #TODO 잘 되는지 확인해야함.
-        if self.input_data[0][0][0] == 0.0:
-            return 1  # 주가 변화 없음 신호
 
         self.tf_init()
         print("init 함수 종료")
         self.prediction()
-
-        return np.argmax(self.output_)
+        idx = int(np.argmax(self.output_))
+        print("Argmax : ",idx)
+        return idx
 
     def prediction(self):
         with tf.Session() as sess:
@@ -69,11 +65,9 @@ class TF(object):
             self.saver = tf.train.Saver()
 
             if ckpt and tf.train.checkpoint_exists(ckpt.model_checkpoint_path):
-                print("## SAVED DATA LOAD ##")
                 self.saver.restore(sess, ckpt.model_checkpoint_path)
             else:
-                print("** tf.global_variables_initializer **")
-                # sess.run(tf.global_variables_initializer())
+                return
 
             self.output_ = sess.run(self.output, {self.tf_x: self.input_data})
             # accuracy_ = sess.run(accuracy, {tf_x: test_input, tf_y: test_label})
@@ -87,20 +81,19 @@ class TF(object):
 
     def tf_init(self):
         self.tf_x = tf.placeholder(tf.float32, [None, self.seq_length, self.data_dim], name='tf_x')
-        self.tf_y = tf.placeholder(tf.int32, [None, self.output_dim], name='tf_y')
+        self.tf_y = tf.placeholder(tf.float32, [None, self.output_dim], name='tf_y')
 
-        # RNN
-        self.rnn_cell = tf.contrib.rnn.BasicLSTMCell(num_units=self.hidden_dim, reuse=tf.get_variable_scope().reuse)
-        self.output, (h_c, h_n) = tf.nn.dynamic_rnn(
-            self.rnn_cell,  # cell you have chosen
-            self.tf_x,  # input
-            initial_state=None,  # the initial hidden state
-            dtype=tf.float32,  # must given if set initial_state = None
-            time_major=False,  # False: (batch, time step, input); True: (time step, batch, input)
-            scope="rnn"
-        )
+        # How to properly apply dropout in RNNs: see README.md
+        self.cells = [tf.contrib.rnn.GRUCell(num_units=self.hidden_dim) for _ in range(self.NLAYERS)]
+        # "naive dropout" implementation
+        self.dropcells = [tf.contrib.rnn.DropoutWrapper(cell, input_keep_prob=self.pkeep) for cell in self.cells]
+        self.multicell = tf.contrib.rnn.MultiRNNCell(self.dropcells, state_is_tuple=False)
+        self.multicell = tf.contrib.rnn.DropoutWrapper(self.multicell, output_keep_prob=self.pkeep)  # dropout for the softmax layer
 
-        self.output = tf.layers.dense(self.output[:, -1, :], self.output_dim, name='dense_output')
+        self.outputs, _ = tf.nn.dynamic_rnn(self.multicell, self.tf_x, dtype=tf.float32, initial_state=None, scope="rnn")
+        self.output = tf.layers.dense(self.outputs[:, -1, :], self.output_dim, name='dense_output')
+
+
     # End Of Class
 
 
